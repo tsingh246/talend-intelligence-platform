@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -28,3 +29,22 @@ class AgentMetadata(BaseModel):
     supported_outputs: list[str] = Field(default_factory=list)
     required_dependencies: list[str] = Field(default_factory=list)
 
+
+class AgentRunSubmitResponse(BaseModel):
+    run_id: str
+    status: Literal["queued", "running", "success", "partial", "error"]
+    agent: str
+    submitted_at: datetime
+    status_url: str
+
+
+class AgentRunStatus(BaseModel):
+    run_id: str
+    agent: str
+    status: Literal["queued", "running", "success", "partial", "error"]
+    submitted_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    request: AgentAnalyzeRequest
+    response: AgentAnalyzeResponse | None = None
+    error: str = ""

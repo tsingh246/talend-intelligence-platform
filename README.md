@@ -47,6 +47,12 @@ Each agent exposes:
 - `GET /metadata`
 - `POST /analyze`
 
+The orchestrator also exposes run-tracking endpoints:
+
+- `POST /runs`
+- `POST /runs/{agent_name}`
+- `GET /runs/{run_id}`
+
 Common analyze request:
 
 ```json
@@ -470,6 +476,14 @@ PLATFORM_ORCHESTRATOR_URL=http://orchestrator:8010
 
 That makes scan actions call the orchestrator, which calls the enabled agents through the shared `/analyze` contract.
 
+The Streamlit UI submits agent work through the orchestrator run API:
+
+```text
+Streamlit -> POST /runs/{agent_name} -> GET /runs/{run_id} until complete
+```
+
+This is the first step toward production-style asynchronous agent execution. The current run store is in-process for MVP use; a production deployment should back it with Postgres plus a durable worker queue.
+
 ### API Examples
 
 Run all enabled agents through the orchestrator:
@@ -487,7 +501,7 @@ Run only the Knowledge Agent scan:
 ```powershell
 Invoke-RestMethod `
   -Method Post `
-  -Uri http://localhost:8010/analyze/knowledge_agent `
+  -Uri http://localhost:8010/runs/knowledge_agent `
   -ContentType application/json `
   -Body '{"repo_id":"","artifact_ids":[],"options":{"mode":"scan"}}'
 ```
@@ -497,9 +511,15 @@ Run a Knowledge Agent text search:
 ```powershell
 Invoke-RestMethod `
   -Method Post `
-  -Uri http://localhost:8010/analyze/knowledge_agent `
+  -Uri http://localhost:8010/runs/knowledge_agent `
   -ContentType application/json `
   -Body '{"repo_id":"","artifact_ids":[],"options":{"mode":"search","query":"customer","limit":10}}'
+```
+
+Poll a run:
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://localhost:8010/runs/<run_id>
 ```
 
 ### Main Tables
