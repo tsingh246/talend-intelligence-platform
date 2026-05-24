@@ -7,16 +7,18 @@ import io
 import base64
 import xml.etree.ElementTree as ET
 from pathlib import Path
+import sys
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from db.init_db import init_db
 from db.session import SessionLocal
-from services.scan_service import scan_repositories
 from services.artifact_summarization_service import (
     build_current_summary_status,
-    summarize_all_artifacts,
 )
-from services.catalog_scan_service import run_data_catalog_scan
-from services.platform_client import call_platform_agent, platform_enabled
+from services.platform_client import call_platform_agent, get_platform_url
 from services.semantic_search_service import (
     build_embedding_source_hash,
     build_missing_embeddings,
@@ -27,13 +29,11 @@ from services.semantic_search_service import (
     semantic_search_artifacts,
     semantic_search_artifacts_pgvector,
 )
-from services.vulnerability_scan_service import run_vulnerability_input_scan, run_vulnerability_scan
 from repositories.artifact_repository import (
     create_sample_artifacts,
     find_artifact_by_job_name,
     get_all_artifacts,
     get_artifact_by_id,
-    insert_artifacts,
     search_artifacts,
 )
 from repositories.vulnerability_repository import (
@@ -275,11 +275,8 @@ def render_vulnerability_page() -> None:
         st.caption("Scans projects under data/repos when a project has a poms folder.")
         if st.button("Run Vulnerability Scan", use_container_width=True):
             try:
-                if platform_enabled():
-                    response = call_platform_agent("vulnerability_agent")
-                    stats = response["results"][0] if response.get("results") else {}
-                else:
-                    stats = run_vulnerability_scan()
+                response = call_platform_agent("vulnerability_agent")
+                stats = response["results"][0] if response.get("results") else {}
                 st.success(
                     "Vulnerability scan complete. "
                     f"Projects: {stats['projects_scanned']}, "
@@ -302,14 +299,11 @@ def render_vulnerability_page() -> None:
         st.caption("Drop exported jobs or jars into data/vulnerability_scan.")
         if st.button("Scan Vulnerability Input Folder", use_container_width=True):
             try:
-                if platform_enabled():
-                    response = call_platform_agent(
-                        "vulnerability_agent",
-                        options={"mode": "input_folder"},
-                    )
-                    stats = response["results"][0] if response.get("results") else {}
-                else:
-                    stats = run_vulnerability_input_scan()
+                response = call_platform_agent(
+                    "vulnerability_agent",
+                    options={"mode": "input_folder"},
+                )
+                stats = response["results"][0] if response.get("results") else {}
                 st.success(
                     "Vulnerability input scan complete. "
                     f"Dependencies: {stats['dependencies_found']}, "
@@ -963,46 +957,29 @@ def render_search_controls() -> tuple[str, str, str]:
 
 def render_maintenance_actions(artifact_type: str) -> None:
     st.sidebar.header("Repository Maintenance")
+    st.sidebar.caption(f"Agent orchestrator: {get_platform_url()}")
     with st.sidebar.expander("Run actions", expanded=False):
         if st.button("Scan Local Repositories", use_container_width=True):
             try:
-                if platform_enabled():
-                    response = call_platform_agent("knowledge_agent", options={"mode": "scan"})
-                    scan_result = response["results"][0] if response.get("results") else {}
-                    st.success(
-                        "Scan complete. "
-                        f"Inserted: {scan_result.get('inserted', 0)}, "
-                        f"Updated: {scan_result.get('updated', 0)}, "
-                        f"Unchanged: {scan_result.get('skipped_unchanged', 0)}"
-                    )
-                    return
-
-                artifacts = scan_repositories()
-
-                if not artifacts:
-                    st.warning("No artifacts found in data/repos/")
-                else:
-                    with SessionLocal() as db:
-                        inserted, updated, skipped_unchanged = insert_artifacts(db, artifacts)
-
-                    st.success(
-                        "Scan complete. "
-                        f"Inserted: {inserted}, Updated: {updated}, Unchanged: {skipped_unchanged}"
-                    )
+                response = call_platform_agent("knowledge_agent", options={"mode": "scan"})
+                scan_result = response["results"][0] if response.get("results") else {}
+                st.success(
+                    "Scan complete. "
+                    f"Inserted: {scan_result.get('inserted', 0)}, "
+                    f"Updated: {scan_result.get('updated', 0)}, "
+                    f"Unchanged: {scan_result.get('skipped_unchanged', 0)}"
+                )
 
             except Exception as e:
                 st.error(f"Scan failed: {e}")
 
         if st.button("Generate Summaries", use_container_width=True):
             try:
-                if platform_enabled():
-                    response = call_platform_agent("knowledge_agent", options={"mode": "summarize"})
-                    summary_result = response["results"][0] if response.get("results") else {}
-                    processed = summary_result.get("processed", 0)
-                    skipped_unchanged = summary_result.get("skipped_unchanged", 0)
-                    failed = summary_result.get("failed", 0)
-                else:
-                    processed, skipped_unchanged, failed = summarize_all_artifacts()
+                response = call_platform_agent("knowledge_agent", options={"mode": "summarize"})
+                summary_result = response["results"][0] if response.get("results") else {}
+                processed = summary_result.get("processed", 0)
+                skipped_unchanged = summary_result.get("skipped_unchanged", 0)
+                failed = summary_result.get("failed", 0)
                 st.success(
                     "Summaries generated. "
                     f"Processed: {processed}, Skipped unchanged: {skipped_unchanged}, Failed: {failed}"
@@ -1787,11 +1764,8 @@ def render_catalog_page() -> None:
     with action_col:
         if st.button("Run Catalog Scan", use_container_width=True):
             try:
-                if platform_enabled():
-                    response = call_platform_agent("catalog_agent")
-                    stats = response["results"][0] if response.get("results") else {}
-                else:
-                    stats = run_data_catalog_scan()
+                response = call_platform_agent("catalog_agent")
+                stats = response["results"][0] if response.get("results") else {}
                 st.success(
                     "Catalog scan complete. "
                     f"Processed: {stats['processed']}, "

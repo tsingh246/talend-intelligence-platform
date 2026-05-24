@@ -106,7 +106,7 @@ Common analyze response:
 - **Agentic Platform MVP**
   - Wraps Knowledge Base, Vulnerability Scan, and Data Catalog as FastAPI services.
   - Adds a platform orchestrator with an agent registry.
-  - Keeps the Streamlit UI working in direct-call mode or orchestrator-backed mode.
+  - Routes Streamlit scan actions through the orchestrator and agent APIs.
   - Uses shared schemas and a shared Talend parser facade to avoid duplicating parser logic in each agent.
 
 ## RAG Architecture
@@ -373,6 +373,15 @@ talend-intelligence-platform/
 Talend repo files / exported jobs / jars
         |
         v
+Streamlit UI / API client
+        |
+        v
+Platform orchestrator
+        |
+        v
+FastAPI agents
+        |
+        v
 Shared parser facade + existing scanners
         |
         v
@@ -380,17 +389,6 @@ Structured evidence and source fingerprints
         |
         v
 Postgres tables + optional pgvector embeddings
-        |
-        +-------------------------+
-        |                         |
-        v                         v
-FastAPI agents             Streamlit direct mode
-        |
-        v
-Platform orchestrator
-        |
-        v
-Streamlit platform mode / future API consumers
 ```
 
 ### Agent Registry
@@ -418,15 +416,24 @@ The orchestrator can be configured with `AGENT_REGISTRY_JSON` or `AGENT_REGISTRY
 
 ## Running Locally
 
-### Existing Streamlit App
+### Streamlit UI
 
-The original local flow still works:
+The UI is now agentic-first. Start the orchestrator and agent services before using scan actions in Streamlit.
+
+By default, local Streamlit calls:
+
+```text
+http://localhost:8010
+```
+
+Override that with `PLATFORM_ORCHESTRATOR_URL` when needed:
 
 ```powershell
+$env:PLATFORM_ORCHESTRATOR_URL="http://localhost:8010"
 streamlit run app/app.py
 ```
 
-When `PLATFORM_ORCHESTRATOR_URL` is not set, Streamlit calls the existing internal services directly.
+If the orchestrator or target agent is not running, scan actions will fail visibly instead of falling back to internal functions.
 
 ### Docker Compose Platform
 

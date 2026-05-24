@@ -7,12 +7,8 @@ import urllib.request
 from typing import Any
 
 
-def platform_enabled() -> bool:
-    return bool(get_platform_url())
-
-
 def get_platform_url() -> str:
-    return os.getenv("PLATFORM_ORCHESTRATOR_URL", "").strip().rstrip("/")
+    return os.getenv("PLATFORM_ORCHESTRATOR_URL", "http://localhost:8010").strip().rstrip("/")
 
 
 def call_platform_agent(
@@ -23,8 +19,6 @@ def call_platform_agent(
     timeout_seconds: int = 180,
 ) -> dict[str, Any]:
     base_url = get_platform_url()
-    if not base_url:
-        raise RuntimeError("PLATFORM_ORCHESTRATOR_URL is not configured.")
 
     payload = json.dumps(
         {
@@ -44,4 +38,3 @@ def call_platform_agent(
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Platform orchestrator call failed: {exc}") from exc
-

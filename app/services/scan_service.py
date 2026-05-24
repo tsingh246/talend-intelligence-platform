@@ -1,6 +1,11 @@
 from datetime import datetime
 from pathlib import Path
+import sys
 from typing import List, Dict
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from shared.talend_parser import parse_item_file
 from services.summary_service import build_artifact_hashes, stable_hash
