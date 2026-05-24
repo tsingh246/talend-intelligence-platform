@@ -1,12 +1,18 @@
-# Talend Repo Agent
+# Talend Intelligence Platform
 
-Talend Repo Agent is a RAG-style knowledge base for Talend repositories. It ingests Talend jobs, routines, joblets, schemas, SQL, dependency metadata, screenshots, and vulnerability evidence, then turns that evidence into searchable context for retrieval, impact analysis, catalog exploration, and implementation-neutral ETL blueprints.
+Talend Intelligence Platform is the modular evolution of the original `talend-repo-agent` project. The original app began as a RAG-style knowledge base for Talend repositories; this fork keeps that behavior while moving toward an agentic, plug-and-play microservice architecture.
+
+The platform ingests Talend jobs, routines, joblets, schemas, SQL, dependency metadata, screenshots, and vulnerability evidence, then turns that evidence into searchable context for retrieval, impact analysis, catalog exploration, vulnerability review, and implementation-neutral ETL blueprints.
 
 The project is meant to showcase how a retrieval-augmented architecture can be built over legacy ETL assets:
 
 ```text
 Talend files -> evidence extraction -> structured KB -> embeddings/search -> grounded answers and blueprints
 ```
+
+For AI reviewers who may not know Talend: Talend is a visual ETL/data-integration platform where data pipelines are stored as project files instead of ordinary Python or SQL scripts. A Talend repository can contain job XML, component metadata, SQL fragments, schemas, context variables, Java routines, screenshots, Maven dependencies, and exported runtime jars.
+
+You do not need Talend Studio to understand or evaluate this project. The important AI problem is turning a specialized enterprise codebase into a retrievable knowledge base with traceable evidence, freshness rules, semantic search, and grounded generated outputs.
 
 Teams can ask questions like:
 
@@ -17,7 +23,52 @@ Teams can ask questions like:
 - Why did a search result match: column name, table name, semantic meaning, evidence text, or component metadata?
 - What implementation-neutral blueprint can be derived from this Talend job?
 
-The application is designed as a local analysis tool. Source code is versioned, while scanned repositories, SQLite/Postgres data exports, vulnerability inputs, and secrets stay local.
+The application is designed as a local analysis tool first, with service boundaries that can later be deployed independently. Source code is versioned, while scanned repositories, Postgres data exports, vulnerability inputs, and secrets stay local.
+
+## Platform Direction
+
+The current architecture is intentionally incremental: existing working services remain intact, and new FastAPI agents wrap them through stable contracts. This keeps the current Streamlit experience usable while enabling agents to be developed, tested, improved, and deployed independently.
+
+MVP agents:
+
+- **Knowledge Agent**: repository discovery, artifact summary generation, and KB search.
+- **Vulnerability Agent**: Maven/exported-jar dependency analysis and vulnerability findings.
+- **Catalog Agent**: field, table, schema, SQL, and lineage-like catalog extraction.
+
+Planned agents:
+
+- Pattern Analyzer Agent
+- Migration Readiness Agent
+- Refactor Recommendation Agent
+
+Each agent exposes:
+
+- `GET /health`
+- `GET /metadata`
+- `POST /analyze`
+
+Common analyze request:
+
+```json
+{
+  "repo_id": "PROJECT_EDW",
+  "artifact_ids": [],
+  "options": {}
+}
+```
+
+Common analyze response:
+
+```json
+{
+  "agent": "knowledge_agent",
+  "version": "1.0.0",
+  "status": "success",
+  "results": [],
+  "summary": "",
+  "metadata": {}
+}
+```
 
 ## Features
 
@@ -51,6 +102,12 @@ The application is designed as a local analysis tool. Source code is versioned, 
   - Builds implementation-neutral job blueprints from parsed evidence.
   - Summarizes purpose, pattern, source/target tables, fields, components, SQL operations, context variables, auth/config signals, dependencies, and implementation notes.
   - Exports blueprint YAML from the artifact detail page.
+
+- **Agentic Platform MVP**
+  - Wraps Knowledge Base, Vulnerability Scan, and Data Catalog as FastAPI services.
+  - Adds a platform orchestrator with an agent registry.
+  - Keeps the Streamlit UI working in direct-call mode or orchestrator-backed mode.
+  - Uses shared schemas and a shared Talend parser facade to avoid duplicating parser logic in each agent.
 
 ## RAG Architecture
 
@@ -282,18 +339,31 @@ That makes the KB suitable for future agent workflows such as impact analysis, m
 ## Project Architecture
 
 ```text
-talend-repo-agent/
+talend-intelligence-platform/
+  agents/
+    knowledge_agent/               FastAPI wrapper for KB scan, summarize, search
+    vulnerability_agent/           FastAPI wrapper for vulnerability scanning
+    catalog_agent/                 FastAPI wrapper for catalog scanning
+  core/
+    agent_registry/                Agent URL/enabled registry
+    orchestrator/                  Platform API that calls enabled agents
+    base_agent.py                  Shared BaseAgent interface
+  shared/
+    schemas/                       Pydantic request/response/metadata contracts
+    talend_parser/                 Shared parser facade for normalized Talend artifacts
   app/
     app.py                         Streamlit UI and page orchestration
     db/                            SQLAlchemy engine, session, schema initialization
     models/                        Artifact, catalog, and vulnerability tables
     parsers/                       Talend .item parsing and evidence extraction
     repositories/                  Database read/write/search functions
-    services/                      Scan orchestration, summaries, semantic search
+    services/                      Scan orchestration, summaries, semantic search, platform client
   catalog_scanner/                 Standalone data catalog scanner
   vulnerability_scanner/           Standalone dependency/vulnerability scanner
+  ui/
+    streamlit_app/                 Streamlit container definition
   scripts/                         CLI utilities for scans, embeddings, pgvector
-  docker-compose.yml               Local Postgres + pgvector
+  docker-compose.yml               Local pgvector, agents, orchestrator, UI
   requirements.txt                 Python dependencies
 ```
 
@@ -303,7 +373,7 @@ talend-repo-agent/
 Talend repo files / exported jobs / jars
         |
         v
-Parsers and scanners
+Shared parser facade + existing scanners
         |
         v
 Structured evidence and source fingerprints
@@ -311,8 +381,118 @@ Structured evidence and source fingerprints
         v
 Postgres tables + optional pgvector embeddings
         |
+        +-------------------------+
+        |                         |
+        v                         v
+FastAPI agents             Streamlit direct mode
+        |
         v
-Streamlit UI: KB search, catalog, vulnerability results, blueprints
+Platform orchestrator
+        |
+        v
+Streamlit platform mode / future API consumers
+```
+
+### Agent Registry
+
+Default local registry:
+
+```json
+{
+  "knowledge_agent": {
+    "url": "http://knowledge-agent:8001",
+    "enabled": true
+  },
+  "vulnerability_agent": {
+    "url": "http://vulnerability-agent:8002",
+    "enabled": true
+  },
+  "catalog_agent": {
+    "url": "http://catalog-agent:8003",
+    "enabled": true
+  }
+}
+```
+
+The orchestrator can be configured with `AGENT_REGISTRY_JSON` or `AGENT_REGISTRY_PATH`.
+
+## Running Locally
+
+### Existing Streamlit App
+
+The original local flow still works:
+
+```powershell
+streamlit run app/app.py
+```
+
+When `PLATFORM_ORCHESTRATOR_URL` is not set, Streamlit calls the existing internal services directly.
+
+### Docker Compose Platform
+
+Run the full MVP platform:
+
+```powershell
+docker compose up --build
+```
+
+Default ports:
+
+- Streamlit UI: `http://localhost:8501`
+- Platform orchestrator: `http://localhost:8010`
+- Knowledge Agent: `http://localhost:8001`
+- Vulnerability Agent: `http://localhost:8002`
+- Catalog Agent: `http://localhost:8003`
+- Postgres/pgvector: `localhost:5432`
+
+Default platform database:
+
+```text
+POSTGRES_DB=talend_intelligence
+Docker volume=talend_intelligence_pgdata
+Container=talend-intelligence-pgvector
+```
+
+This is intentionally separate from the original `talend-repo-agent` database so this fork can evolve without sharing or mutating the old app's data.
+
+In Compose mode, the UI sets:
+
+```text
+PLATFORM_ORCHESTRATOR_URL=http://orchestrator:8010
+```
+
+That makes scan actions call the orchestrator, which calls the enabled agents through the shared `/analyze` contract.
+
+### API Examples
+
+Run all enabled agents through the orchestrator:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://localhost:8010/analyze `
+  -ContentType application/json `
+  -Body '{"repo_id":"PROJECT_EDW","artifact_ids":[],"options":{}}'
+```
+
+Run only the Knowledge Agent scan:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://localhost:8010/analyze/knowledge_agent `
+  -ContentType application/json `
+  -Body '{"repo_id":"","artifact_ids":[],"options":{"mode":"scan"}}'
+```
+
+Run a Knowledge Agent text search:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://localhost:8010/analyze/knowledge_agent `
+  -ContentType application/json `
+  -Body '{"repo_id":"","artifact_ids":[],"options":{"mode":"search","query":"customer","limit":10}}'
 ```
 
 ### Main Tables
@@ -323,64 +503,38 @@ Streamlit UI: KB search, catalog, vulnerability results, blueprints
 - `vulnerability_findings`: dependency vulnerability findings.
 - `vulnerability_scans`: vulnerability scan history.
 
-## Local Setup
+## Portfolio Showcase
 
-### 1. Create and activate a virtual environment
+This repository is positioned as a product and architecture showcase. A reviewer should be able to understand the value without running the app locally.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
+The target reviewer does not need Talend installed. Screenshots, diagrams, and walkthrough notes should show the RAG workflow over Talend artifacts the same way a code-search or document-intelligence demo can be evaluated without owning the original enterprise platform.
 
-### 2. Install dependencies
+Recommended showcase assets:
 
-```powershell
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
+- dashboard screenshot
+- catalog search screenshot with grouped match explanations
+- artifact detail screenshot with evidence and dependency context
+- ETL Blueprint screenshot or YAML preview
+- RAG architecture diagram
+- optional short GIF or video walkthrough
 
-### 3. Start Postgres with pgvector
-
-```powershell
-docker compose up -d
-```
-
-The default database settings match `docker-compose.yml`:
+A good reviewer flow is:
 
 ```text
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=talend_kb
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
+Problem
+  Legacy Talend repositories are difficult to search, explain, modernize, and govern.
+
+Approach
+  Parse Talend assets into structured evidence, retrieve relevant context, augment it with metadata,
+  and generate grounded summaries, catalog views, vulnerability views, and ETL blueprints.
+
+Proof
+  Screenshots show the working UI, match reasons, blueprint generation, and RAG-style refresh logic.
 ```
 
-### 4. Optional `.env`
+The local runtime details are intentionally not the focus of the README. The project can still be run by the author for demos, screenshots, and future hosted deployment.
 
-Create a local `.env` file if you need custom settings. Do not commit it.
-
-```text
-DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/talend_kb
-
-# Optional LLM summaries
-ENABLE_LLM_SUMMARIES=false
-OPENAI_API_KEY=
-OPENAI_SUMMARY_MODEL=gpt-4o-mini
-
-# Optional embeddings
-EMBEDDING_PROVIDER=local
-SENTENCE_TRANSFORMER_MODEL=sentence-transformers/all-MiniLM-L6-v2
-```
-
-If `OPENAI_API_KEY` is present and `EMBEDDING_PROVIDER` is not set, the app can use OpenAI embeddings. Set `EMBEDDING_PROVIDER=local` to force local sentence-transformer embeddings.
-
-### 5. Run the app
-
-```powershell
-streamlit run app/app.py
-```
-
-## Input Folders
+## Local Data Boundaries
 
 These folders are intentionally ignored by Git:
 
@@ -389,7 +543,7 @@ data/
 exports/
 ```
 
-Recommended local layout:
+Internal local layout:
 
 ```text
 data/
@@ -398,27 +552,22 @@ data/
 exports/                  CSV/JSON scan outputs
 ```
 
-## App Workflows
+## Product Walkthrough
 
 ### Knowledge Base
 
-1. Put Talend repository content under `data/repos`.
-2. Open the app.
-3. Use **Scan Local Repositories** from the Knowledge Base page.
-4. Review the scan result: inserted, updated, unchanged.
-5. Generate summaries if needed.
-6. Search by job name, component, table, URL, auth signal, context variable, SQL evidence, or semantic content.
-7. Open an artifact detail page to review evidence, job preview, dependencies, and the generated ETL blueprint.
+The Knowledge Base page scans Talend repositories, tracks inserted/updated/unchanged artifacts, generates summaries, and supports search by job name, component, table, URL, auth signal, context variable, SQL evidence, or semantic content.
+
+Artifact detail pages show parsed evidence, job preview screenshots, dependency context, and generated ETL blueprints.
 
 ### Data Catalog
 
-1. Put Talend repository content under `data/repos`.
-2. Open **Data Catalog**.
-3. Run **Catalog Scan**.
-4. Search for terms like `customer`, `customer_id`, `email`, `dob`, `ssn`, table names, or semantic meanings.
-5. Use:
-   - `Search by`: `Text + Meaning`, `Meaning only`, or `Text only`
-   - `Group by`: `Job`, `Table`, `Column`, `Match Type`, or `Evidence Type`
+The Data Catalog page searches for terms like `customer`, `customer_id`, `email`, `dob`, `ssn`, table names, or semantic meanings.
+
+It supports:
+
+- `Search by`: `Text + Meaning`, `Meaning only`, or `Text only`
+- `Group by`: `Job`, `Table`, `Column`, `Match Type`, or `Evidence Type`
 
 Catalog result colors:
 
@@ -429,50 +578,7 @@ Catalog result colors:
 
 ### Vulnerability Scan
 
-From the app:
-
-1. Open **Vulnerability Scan**.
-2. Run either:
-   - KB repository scan for poms found under `data/repos`
-   - standalone input scan for files under `data/vulnerability_scan`
-
-From CLI:
-
-```powershell
-python scripts/vulnerability_scan.py --input data/vulnerability_scan --output exports/vulnerability_scan_results.csv
-```
-
-To parse dependencies without querying OSV:
-
-```powershell
-python scripts/vulnerability_scan.py --input data/vulnerability_scan --no-osv
-```
-
-## CLI Utilities
-
-Run catalog scan to CSV:
-
-```powershell
-python scripts/catalog_scan.py --input data/repos --output exports/talend_data_catalog.csv
-```
-
-Build missing embeddings:
-
-```powershell
-python scripts/build_embeddings.py --artifact-type All
-```
-
-Download the local sentence-transformer model:
-
-```powershell
-python scripts/download_embedding_model.py
-```
-
-Enable pgvector manually:
-
-```powershell
-.\scripts\enable_pgvector.ps1
-```
+The Vulnerability Scan page can analyze poms found in the knowledge base or standalone exported jobs/jars. Findings are stored separately from artifact evidence and can be reviewed as part of modernization and governance planning.
 
 ## Search and Matching Notes
 

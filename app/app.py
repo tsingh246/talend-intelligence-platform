@@ -16,6 +16,7 @@ from services.artifact_summarization_service import (
     summarize_all_artifacts,
 )
 from services.catalog_scan_service import run_data_catalog_scan
+from services.platform_client import call_platform_agent, platform_enabled
 from services.semantic_search_service import (
     build_embedding_source_hash,
     build_missing_embeddings,
@@ -274,7 +275,11 @@ def render_vulnerability_page() -> None:
         st.caption("Scans projects under data/repos when a project has a poms folder.")
         if st.button("Run Vulnerability Scan", use_container_width=True):
             try:
-                stats = run_vulnerability_scan()
+                if platform_enabled():
+                    response = call_platform_agent("vulnerability_agent")
+                    stats = response["results"][0] if response.get("results") else {}
+                else:
+                    stats = run_vulnerability_scan()
                 st.success(
                     "Vulnerability scan complete. "
                     f"Projects: {stats['projects_scanned']}, "
@@ -297,7 +302,14 @@ def render_vulnerability_page() -> None:
         st.caption("Drop exported jobs or jars into data/vulnerability_scan.")
         if st.button("Scan Vulnerability Input Folder", use_container_width=True):
             try:
-                stats = run_vulnerability_input_scan()
+                if platform_enabled():
+                    response = call_platform_agent(
+                        "vulnerability_agent",
+                        options={"mode": "input_folder"},
+                    )
+                    stats = response["results"][0] if response.get("results") else {}
+                else:
+                    stats = run_vulnerability_input_scan()
                 st.success(
                     "Vulnerability input scan complete. "
                     f"Dependencies: {stats['dependencies_found']}, "
@@ -954,6 +966,17 @@ def render_maintenance_actions(artifact_type: str) -> None:
     with st.sidebar.expander("Run actions", expanded=False):
         if st.button("Scan Local Repositories", use_container_width=True):
             try:
+                if platform_enabled():
+                    response = call_platform_agent("knowledge_agent", options={"mode": "scan"})
+                    scan_result = response["results"][0] if response.get("results") else {}
+                    st.success(
+                        "Scan complete. "
+                        f"Inserted: {scan_result.get('inserted', 0)}, "
+                        f"Updated: {scan_result.get('updated', 0)}, "
+                        f"Unchanged: {scan_result.get('skipped_unchanged', 0)}"
+                    )
+                    return
+
                 artifacts = scan_repositories()
 
                 if not artifacts:
@@ -972,7 +995,14 @@ def render_maintenance_actions(artifact_type: str) -> None:
 
         if st.button("Generate Summaries", use_container_width=True):
             try:
-                processed, skipped_unchanged, failed = summarize_all_artifacts()
+                if platform_enabled():
+                    response = call_platform_agent("knowledge_agent", options={"mode": "summarize"})
+                    summary_result = response["results"][0] if response.get("results") else {}
+                    processed = summary_result.get("processed", 0)
+                    skipped_unchanged = summary_result.get("skipped_unchanged", 0)
+                    failed = summary_result.get("failed", 0)
+                else:
+                    processed, skipped_unchanged, failed = summarize_all_artifacts()
                 st.success(
                     "Summaries generated. "
                     f"Processed: {processed}, Skipped unchanged: {skipped_unchanged}, Failed: {failed}"
@@ -1757,7 +1787,11 @@ def render_catalog_page() -> None:
     with action_col:
         if st.button("Run Catalog Scan", use_container_width=True):
             try:
-                stats = run_data_catalog_scan()
+                if platform_enabled():
+                    response = call_platform_agent("catalog_agent")
+                    stats = response["results"][0] if response.get("results") else {}
+                else:
+                    stats = run_data_catalog_scan()
                 st.success(
                     "Catalog scan complete. "
                     f"Processed: {stats['processed']}, "

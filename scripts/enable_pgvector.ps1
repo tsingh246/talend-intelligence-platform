@@ -1,7 +1,7 @@
 param(
     [string]$HostName = "localhost",
     [int]$Port = 5432,
-    [string]$Database = "talend_kb",
+    [string]$Database = "talend_intelligence",
     [string]$User = "postgres",
     [string]$Password = "postgres"
 )

@@ -1,15 +1,113 @@
 services:
   pgvector:
     image: ankane/pgvector
-    container_name: talend-kb-pgvector
+    container_name: talend-intelligence-pgvector
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: talend_kb
+      POSTGRES_DB: talend_intelligence
     ports:
       - "5432:5432"
     volumes:
-      - talend_kb_pgdata:/var/lib/postgresql/data
+      - talend_intelligence_pgdata:/var/lib/postgresql/data
+
+  knowledge-agent:
+    build:
+      context: .
+      dockerfile: agents/knowledge_agent/Dockerfile
+    container_name: talend-knowledge-agent
+    environment:
+      POSTGRES_HOST: pgvector
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: talend_intelligence
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      DISABLE_SENTENCE_TRANSFORMERS: "1"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+      - ./exports:/app/exports
+    depends_on:
+      - pgvector
+
+  vulnerability-agent:
+    build:
+      context: .
+      dockerfile: agents/vulnerability_agent/Dockerfile
+    container_name: talend-vulnerability-agent
+    environment:
+      POSTGRES_HOST: pgvector
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: talend_intelligence
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./data:/app/data
+      - ./exports:/app/exports
+    depends_on:
+      - pgvector
+
+  catalog-agent:
+    build:
+      context: .
+      dockerfile: agents/catalog_agent/Dockerfile
+    container_name: talend-catalog-agent
+    environment:
+      POSTGRES_HOST: pgvector
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: talend_intelligence
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./data:/app/data
+      - ./exports:/app/exports
+    depends_on:
+      - pgvector
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: core/orchestrator/Dockerfile
+    container_name: talend-platform-orchestrator
+    environment:
+      AGENT_REGISTRY_JSON: >
+        {
+          "knowledge_agent": {"url": "http://knowledge-agent:8001", "enabled": true},
+          "vulnerability_agent": {"url": "http://vulnerability-agent:8002", "enabled": true},
+          "catalog_agent": {"url": "http://catalog-agent:8003", "enabled": true}
+        }
+    ports:
+      - "8010:8010"
+    depends_on:
+      - knowledge-agent
+      - vulnerability-agent
+      - catalog-agent
+
+  ui:
+    build:
+      context: .
+      dockerfile: ui/streamlit_app/Dockerfile
+    container_name: talend-platform-ui
+    environment:
+      POSTGRES_HOST: pgvector
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: talend_intelligence
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PLATFORM_ORCHESTRATOR_URL: http://orchestrator:8010
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./exports:/app/exports
+    depends_on:
+      - pgvector
+      - orchestrator
 
 volumes:
-  talend_kb_pgdata:
+  talend_intelligence_pgdata:

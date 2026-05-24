@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict
 
-from parsers.item_parser import parse_item_file
+from shared.talend_parser import parse_item_file
 from services.summary_service import build_artifact_hashes, stable_hash
 
 
